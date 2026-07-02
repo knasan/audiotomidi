@@ -56,18 +56,18 @@ function (event) {
 
     function formatSignal(ds) {
         if (ds.hz && ds.hz > 0) {
-            return 'Ton erkannt';
+            return 'tone detected';
         }
         if (hasAudioSignal(ds.rms)) {
-            if (ds.confidence >= 0.18) {
-                return 'Analysiere…';
+            if (ds.confidence >= 0.12) {
+                return 'analysing…';
             }
-            return 'Schwaches Signal';
+            return 'weak signal';
         }
         if (ds.confidence >= 0.05) {
-            return 'Schwaches Signal';
+            return 'weak signal';
         }
-        return 'Kein Signal';
+        return 'no signal';
     }
 
     function midiNoteLabel(midiNote) {
@@ -86,7 +86,7 @@ function (event) {
         }
 
         var note = ds.hz > 0 ? noteFromFrequency(ds.hz) : null;
-        var pending = ds.confidence >= 0.18 || hasAudioSignal(ds.rms);
+        var pending = ds.confidence >= 0.12 || hasAudioSignal(ds.rms);
         var nameEl = icon.find('.tuner-note-name');
         var octaveEl = icon.find('.tuner-note-octave');
 

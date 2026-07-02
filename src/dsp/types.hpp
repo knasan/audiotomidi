@@ -547,7 +547,10 @@ struct AnalyserConfig {
 }
 
 /// Minimum Aubio confidence for the MOD tuner display (lower than MIDI Note On).
-inline constexpr float kTunerDisplayMinConfidence = 0.18F;
+inline constexpr float kTunerDisplayMinConfidence = 0.12F;
+
+/// Minimum confidence to keep a held MIDI note while the string still rings.
+inline constexpr float kHoldMinPitchConfidence = 0.20F;
 
 /// RMS floor matching @c hasAudioSignal() in modgui/tuner.js.
 inline constexpr float kTunerMinAudioRms = 0.00008F;
@@ -626,6 +629,21 @@ enum class TunerReadout : std::uint8_t {
     return pitch.raw_frequency_hz;
 }
 
+/// MIDI note from pitch using the same Hz→note mapping as modgui/tuner.js.
+[[nodiscard]] inline int tuner_midi_note_from_pitch(
+    const PitchEstimate& pitch, const AnalyserConfig& config) noexcept {
+    const float hz = tuner_display_hz(pitch);
+    if (hz < config.min_frequency_hz || hz > config.max_frequency_hz) {
+        return 0;
+    }
+    const int note =
+        frequency_to_midi_note_nearest_temperament(hz, config.reference_a4_hz);
+    if (note < 0 || note > 127) {
+        return 0;
+    }
+    return note;
+}
+
 /// Tuner GUI — show pitch like an external strobe tuner, not gated on MIDI Note On.
 [[nodiscard]] inline bool pitch_valid_for_tuner_display(
     const PitchEstimate& pitch, const AnalyserConfig& config) noexcept {
@@ -652,6 +670,10 @@ struct TunerMidiSyncState {
 
 /// Build Note On/Off events mirroring the MOD tuner display (same rules as tuner.js).
 ///
+/// Note On when the large readout shows a note name (e.g. C4, D#4). Note Off when
+/// the readout shows "--" after @p config.note_off_delay_blocks. Pending ("…") holds
+/// the previous MIDI note unchanged.
+///
 /// @p hop_rms Aubio hop RMS for velocity (falls back to @p block_rms when <= 0).
 /// @return Number of events written to @p out (at most @p capacity).
 inline std::size_t tuner_midi_sync_events(
@@ -662,13 +684,11 @@ inline std::size_t tuner_midi_sync_events(
     if (out == nullptr || capacity == 0) {
         return 0;
     }
+    (void)block_size;
 
     std::size_t count = 0;
-    const std::uint32_t end_frame =
-        block_size > 0 ? static_cast<std::uint32_t>(block_size - 1) : 0U;
     const TunerReadout readout = tuner_gui_readout(monitor, config);
     const int note = tuner_gui_midi_note(monitor, config);
-    const TunerReadout previous = state.last_readout;
     state.last_readout = readout;
 
     const auto push_note = [&](const int midi_note, const float velocity,
@@ -683,11 +703,10 @@ inline std::size_t tuner_midi_sync_events(
     switch (readout) {
     case TunerReadout::Blank:
         state.pending_note = -1;
-        state.pending_blocks = 0;
         if (state.active_note >= 0) {
             ++state.blank_blocks;
             if (state.blank_blocks >= config.note_off_delay_blocks) {
-                push_note(state.active_note, 0.0F, false, end_frame);
+                push_note(state.active_note, 0.0F, false, 0U);
                 state.active_note = -1;
                 state.blank_blocks = 0;
             }
@@ -702,34 +721,20 @@ inline std::size_t tuner_midi_sync_events(
     }
 
     state.blank_blocks = 0;
-    if (note <= 0) {
+    if (note <= 0 || state.active_note == note) {
         return count;
     }
 
-    if (note == state.pending_note) {
-        ++state.pending_blocks;
-    } else {
-        state.pending_note = note;
-        state.pending_blocks = 1U;
-    }
-
-    const bool should_emit = previous != TunerReadout::Note ||
-                             state.active_note < 0 ||
-                             state.active_note != note;
-    if (!should_emit || state.pending_blocks < 1U) {
-        return count;
-    }
-
-    const bool had_active = state.active_note >= 0;
-    if (had_active && state.active_note != note) {
-        push_note(state.active_note, 0.0F, false, end_frame);
+    if (state.active_note >= 0) {
+        push_note(state.active_note, 0.0F, false, 0U);
     }
 
     const float velocity_rms =
         hop_rms > 0.0F ? note_on_velocity_rms(block_rms, hop_rms) : block_rms;
     const float velocity = rms_to_velocity(velocity_rms, config);
-    push_note(note, velocity, true, had_active ? end_frame : 0U);
+    push_note(note, velocity, true, 0U);
     state.active_note = note;
+    state.pending_note = note;
     return count;
 }
 

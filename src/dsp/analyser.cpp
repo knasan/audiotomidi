@@ -43,6 +43,12 @@ struct AnalyserImpl {
     float prev_block_rms = 0.0F;
     float peak_block_rms = 0.0F;
 
+    /// Recent RMS valley between picks on a ringing string (envelope follower).
+    float pick_valley_rms = 0.0F;
+
+    /// Blocks remaining to treat input as a fresh pick (fret / re-strike window).
+    std::uint32_t articulation_latch_blocks = 0;
+
     int pending_candidate_note = -1;
     std::uint32_t pending_candidate_hops = 0;
 
@@ -135,10 +141,16 @@ bool pitch_in_range(const float frequency_hz,
 constexpr std::uint32_t kSilentBlocksToSleep = 4;
 
 /// Ignore new Note On for this many blocks after Note Off (string decay tail).
-constexpr std::uint32_t kSquelchBlocksAfterOff = 6;
+constexpr std::uint32_t kSquelchBlocksAfterOff = 3;
 
-/// Minimum hold time after Note On before Note Off is allowed (~43 ms @ 48 kHz / 128 fpp).
-constexpr std::uint32_t kSustainGuardBlocks = 16;
+/// Minimum hold time after Note On before Note Off is allowed (~27 ms @ 48 kHz / 128 fpp).
+constexpr std::uint32_t kSustainGuardBlocks = 10;
+
+/// Minimum blocks between same-fret re-strikes (avoids double triggers on one pick).
+constexpr std::uint32_t kRearticulateCooldownBlocks = 4;
+
+/// Block RMS must rise by this factor vs. previous block to count as a new pick.
+constexpr float kAttackRmsRiseRatio = 1.28F;
 
 /// Consecutive hops on the same semitone before Note On (idle attack).
 constexpr std::uint32_t kNoteOnHopConsensus = 2;
@@ -149,17 +161,17 @@ constexpr std::uint32_t kMelodicHopConsensus = 2;
 /// Hops for melodic change after pick attack on a held string.
 constexpr std::uint32_t kMelodicAttackHopConsensus = 1;
 
-/// Minimum blocks between pick re-articulations on the same held note.
-constexpr std::uint32_t kRearticulateCooldownBlocks = 48;
-
-/// Block RMS must rise by this factor vs. previous block to count as a new pick.
-constexpr float kAttackRmsRiseRatio = 1.35F;
-
 /// Stricter RMS rise for re-articulation — avoids false Note Off/On "pips" on sustain.
-constexpr float kRearticulateRmsRiseRatio = 1.85F;
+constexpr float kRearticulateRmsRiseRatio = 1.35F;
 
-/// Slow peak decay while a note is held (reduces spurious pick detection).
-constexpr float kSustainPeakDecay = 0.998F;
+/// Pick on a ringing string: RMS rise above recent valley between strokes.
+constexpr float kHeldStringPickValleyRiseRatio = 1.26F;
+
+/// Pick on a ringing string: block-to-block RMS rise.
+constexpr float kHeldStringPickPrevRiseRatio = 1.10F;
+
+/// Slow peak decay while a note is held (lets new picks exceed the envelope).
+constexpr float kSustainPeakDecay = 0.992F;
 
 /// Semitone jump that clears folded-Hz history (failed prior fret, new note).
 constexpr int kPitchHistoryClearSemitones = 3;
@@ -187,9 +199,15 @@ bool is_power_of_two(const std::size_t value) noexcept {
 
 bool pitch_valid_for_hold(const PitchEstimate& pitch, const float gate_rms,
                           const AnalyserConfig& config) noexcept {
-    return pitch.is_valid && pitch_in_range(pitch.frequency_hz, config) &&
-           pitch.confidence >= note_off_threshold(config) &&
-           gate_rms >= config.velocity_rms_min;
+    if (gate_rms < config.silence_rms_threshold) {
+        return false;
+    }
+    if (pitch.frequency_hz <= 0.0F ||
+        !pitch_in_range(pitch.frequency_hz, config)) {
+        return false;
+    }
+    // Yinfast confidence dips during sustain — hold on frequency + audible level.
+    return pitch.confidence >= kHoldMinPitchConfidence;
 }
 
 /// True while the input still carries a played note (pitch + audible level).
@@ -200,24 +218,6 @@ bool audio_sustains_active_note(const PitchEstimate& pitch,
         return false;
     }
     return pitch_valid_for_hold(pitch, gate_rms, config);
-}
-
-/// Guitar still ringing for Note-Off purposes — matches tuner display tolerance.
-///
-/// Aubio confidence often dips during sustained playing while the MOD tuner still
-/// shows a note. Treating that as silence caused spurious Note Off and left
-/// @c awaiting_fresh_attack set until the string was fully muted.
-bool pitch_audible_for_sustain(const PitchEstimate& pitch, const float gate_rms,
-                               const AnalyserConfig& config) noexcept {
-    if (audio_sustains_active_note(pitch, gate_rms, config)) {
-        return true;
-    }
-    if (gate_rms < config.velocity_rms_min) {
-        return false;
-    }
-    const float hz = tuner_display_hz(pitch);
-    return hz > 0.0F && pitch_in_range(hz, config) &&
-           pitch.confidence >= kTunerDisplayMinConfidence;
 }
 
 bool pitch_valid_for_note_on(const PitchEstimate& pitch, const float gate_rms,
@@ -242,7 +242,8 @@ float compute_hop_rms(const float* const samples,
 
 bool is_attack_transient(const float block_rms, const float prev_block_rms,
                          const AnalyserConfig& config) noexcept {
-    if (block_rms < config.velocity_rms_min * 4.0F) {
+    // if (block_rms < config.velocity_rms_min * 4.0F) {
+    if (block_rms < config.velocity_rms_min * 2.0F) {
         return false;
     }
     if (prev_block_rms <= config.silence_rms_threshold) {
@@ -255,13 +256,56 @@ bool is_attack_transient(const float block_rms, const float prev_block_rms,
 bool is_pick_attack_above_sustain_peak(const float block_rms,
                                        const float peak_block_rms,
                                        const AnalyserConfig& config) noexcept {
-    if (block_rms < config.velocity_rms_min * 4.0F) {
+    if (block_rms < config.velocity_rms_min * 3.0F) {
         return false;
     }
     if (peak_block_rms <= config.silence_rms_threshold) {
         return false;
     }
     return block_rms > peak_block_rms * kRearticulateRmsRiseRatio;
+}
+
+/// New pick while the string still rings (same fret or fret change — no full mute).
+bool is_pick_on_ringing_string(const float block_rms, const float prev_block_rms,
+                               const float pick_valley_rms,
+                               const AnalyserConfig& config) noexcept {
+    if (block_rms < config.velocity_rms_min * 2.5F) {
+        return false;
+    }
+    if (pick_valley_rms > config.silence_rms_threshold &&
+        block_rms > pick_valley_rms * kHeldStringPickValleyRiseRatio) {
+        return true;
+    }
+    if (prev_block_rms > config.silence_rms_threshold &&
+        block_rms > prev_block_rms * kHeldStringPickPrevRiseRatio) {
+        return true;
+    }
+    return is_pick_attack_above_sustain_peak(block_rms, pick_valley_rms, config);
+}
+
+/// Stronger pick gate for same-fret re-strike (avoids sine phase wobble).
+bool is_strong_pick_on_ringing_string(const float block_rms,
+                                    const float prev_block_rms,
+                                    const float pick_valley_rms,
+                                    const float peak_block_rms,
+                                    const AnalyserConfig& config) noexcept {
+    if (block_rms < config.velocity_rms_min * 2.5F) {
+        return false;
+    }
+    if (block_rms <= prev_block_rms) {
+        return false;
+    }
+    // New energy above the decaying sustain envelope (real pick stroke).
+    if (peak_block_rms > config.silence_rms_threshold &&
+        block_rms > peak_block_rms * 1.06F) {
+        return true;
+    }
+    if (!is_pick_on_ringing_string(block_rms, prev_block_rms, pick_valley_rms,
+                                   config)) {
+        return false;
+    }
+    return pick_valley_rms > config.silence_rms_threshold &&
+           block_rms > pick_valley_rms * 1.45F;
 }
 
 void record_folded_hz(AnalyserImpl& impl, const float frequency_hz) noexcept {
@@ -337,21 +381,25 @@ void track_note_candidate(AnalyserImpl& impl, const int candidate,
     }
 }
 
-bool note_candidate_is_stable(const AnalyserImpl& impl,
-                              const bool attack_phase) noexcept {
-    const std::uint32_t need = attack_phase ? 1U : kNoteOnHopConsensus;
-    return impl.pending_candidate_hops >= need;
+bool note_candidate_is_stable(const AnalyserImpl& impl) noexcept {
+    return impl.pending_candidate_hops >= kNoteOnHopConsensus;
 }
 
 bool note_candidate_stable_for_attack(const AnalyserImpl& impl,
                                       const float quantize_hz,
-                                      const bool attack_phase) noexcept {
-    if (note_candidate_is_stable(impl, attack_phase)) {
+                                      const bool attack_phase,
+                                      const bool awaiting_fresh_attack,
+                                      const bool deliberate_pick) noexcept {
+    if (note_candidate_is_stable(impl)) {
         return true;
     }
-    return attack_phase && frequency_in_melody_course_band(quantize_hz) &&
-           impl.pending_candidate_hops >= 1U &&
-           impl.pending_candidate_note >= 0;
+    if (impl.pending_candidate_hops < 1U || impl.pending_candidate_note < 0) {
+        return false;
+    }
+    if (!frequency_in_melody_course_band(quantize_hz)) {
+        return false;
+    }
+    return attack_phase || (awaiting_fresh_attack && deliberate_pick);
 }
 
 bool note_candidate_stable_for_melodic(const AnalyserImpl& impl,
@@ -433,6 +481,8 @@ bool Analyser::prepare(const double sample_rate, const std::size_t max_block_siz
     impl_->awaiting_fresh_attack = false;
     impl_->prev_block_rms = 0.0F;
     impl_->peak_block_rms = 0.0F;
+    impl_->pick_valley_rms = 0.0F;
+    impl_->articulation_latch_blocks = 0;
     impl_->pending_candidate_note = -1;
     impl_->pending_candidate_hops = 0;
     impl_->rearticulate_cooldown_blocks = 0;
@@ -499,6 +549,8 @@ void Analyser::reset() {
     impl_->awaiting_fresh_attack = false;
     impl_->prev_block_rms = 0.0F;
     impl_->peak_block_rms = 0.0F;
+    impl_->pick_valley_rms = 0.0F;
+    impl_->articulation_latch_blocks = 0;
     impl_->pending_candidate_note = -1;
     impl_->pending_candidate_hops = 0;
     impl_->rearticulate_cooldown_blocks = 0;
@@ -571,20 +623,21 @@ void Analyser::emit_pitch_bend(const int wheel,
 
 void Analyser::maybe_emit_continuous_pitch_bend(
     const PitchEstimate& pitch, const std::uint32_t frame_offset) {
-    if (!config_.pitch_bend_enable || attack_phase_ || !active_note_.has_value()) {
+    if (!config_.pitch_bend_enable || attack_phase_ || !active_note_.has_value() ||
+        !pitch.is_valid || pitch.frequency_hz <= 0.0F) {
         return;
     }
-    // Locked semitone during sustain — send centre bend only (no yinfast wobble).
-    if (std::abs(last_sent_pitch_bend_wheel_) < kPitchBendSendThreshold) {
+    const int wheel =
+        frequency_to_pitch_bend_wheel(pitch.frequency_hz, config_.reference_a4_hz);
+    if (std::abs(wheel - last_sent_pitch_bend_wheel_) < kPitchBendSendThreshold) {
         return;
     }
-    emit_pitch_bend(0, frame_offset);
+    emit_pitch_bend(wheel, frame_offset);
 }
 
 void Analyser::maybe_rearticulate_on_pick(const float /*block_rms*/,
                                           const std::size_t /*block_size*/) {
-    // Disabled: same-note Note Off/On on sustain dynamics caused audible pitch
-    // wobble on MOD (especially D4/D#4). Melodic changes use deliberate_pick paths.
+    // Handled in apply_pitch_to_note_machine() as same_note_restrike.
 }
 
 void Analyser::force_note_off(const std::size_t block_size) {
@@ -623,9 +676,9 @@ void Analyser::update_note_off_delay(const float block_rms,
         impl_->sustain_guard_blocks = 0U;
     }
 
-    const float gate_rms = std::min(last_pitch_.rms, block_rms);
+    const float sustain_rms = std::max(block_rms, last_pitch_.rms);
 
-    if (pitch_audible_for_sustain(last_pitch_, gate_rms, config_)) {
+    if (audio_sustains_active_note(last_pitch_, sustain_rms, config_)) {
         if (note_off_counter_ > 0U) {
             --note_off_counter_;
         }
@@ -649,10 +702,39 @@ void Analyser::apply_pitch_to_note_machine(const PitchEstimate& pitch,
     const float source_hz =
         pitch.raw_frequency_hz > 0.0F ? pitch.raw_frequency_hz : pitch.frequency_hz;
 
+    const bool held_string_pick =
+        active_note_.has_value() &&
+        is_pick_on_ringing_string(block_rms, impl_->prev_block_rms,
+                                  impl_->pick_valley_rms, config_);
+
+    const bool strong_held_pick =
+        active_note_.has_value() &&
+        is_strong_pick_on_ringing_string(block_rms, impl_->prev_block_rms,
+                                         impl_->pick_valley_rms,
+                                         impl_->peak_block_rms, config_);
+
     const bool deliberate_pick =
         attack_phase_ ||
         is_attack_transient(block_rms, impl_->prev_block_rms, config_) ||
-        is_pick_attack_above_sustain_peak(block_rms, impl_->peak_block_rms, config_);
+        is_pick_attack_above_sustain_peak(block_rms, impl_->peak_block_rms,
+                                          config_) ||
+        held_string_pick;
+
+    /// True pick that may release the held-note pitch lock (not soft envelope wobble).
+    const bool articulation_pick =
+        attack_phase_ ||
+        is_attack_transient(block_rms, impl_->prev_block_rms, config_) ||
+        is_pick_attack_above_sustain_peak(block_rms, impl_->peak_block_rms,
+                                          config_) ||
+        strong_held_pick;
+
+    if (strong_held_pick) {
+        impl_->articulation_latch_blocks = 12U;
+    }
+
+    const bool articulation_window =
+        attack_phase_ || strong_held_pick ||
+        impl_->articulation_latch_blocks > 0U;
 
     const bool awaiting_stable_note_on =
         !active_note_.has_value() &&
@@ -671,7 +753,7 @@ void Analyser::apply_pitch_to_note_machine(const PitchEstimate& pitch,
         0, 127);
 
     const bool new_note_pick =
-        active_note_.has_value() && deliberate_pick &&
+        active_note_.has_value() && articulation_window &&
         std::abs(quick_candidate - active_note_->note) >=
             kMelodicIntervalMinSemitones;
 
@@ -679,8 +761,11 @@ void Analyser::apply_pitch_to_note_machine(const PitchEstimate& pitch,
         clear_folded_hz_history(*impl_);
     }
 
+    const bool release_pitch_hint =
+        active_note_.has_value() && articulation_window;
+
     const int active_hint =
-        active_note_.has_value() && !new_note_pick
+        active_note_.has_value() && !new_note_pick && !release_pitch_hint
             ? active_note_->note - config_.midi_transpose
             : -1;
     const int pitch_hint = resolve_pitch_hint(*impl_, active_hint,
@@ -697,7 +782,7 @@ void Analyser::apply_pitch_to_note_machine(const PitchEstimate& pitch,
                                      config_.reference_a4_hz)
             : 0.0F;
     const bool significant_pitch_change =
-        active_note_.has_value() && deliberate_pick && folded_hz > 0.0F &&
+        active_note_.has_value() && articulation_window && folded_hz > 0.0F &&
         held_target_hz > 0.0F &&
         std::abs(folded_hz - held_target_hz) / held_target_hz > 0.045F;
 
@@ -756,6 +841,21 @@ void Analyser::apply_pitch_to_note_machine(const PitchEstimate& pitch,
         last_pitch_.frequency_hz = folded_hz;
     }
 
+    // Hold MIDI semitone while the string sustains.
+    if (active_note_.has_value() && !articulation_window && !new_note_pick &&
+        !significant_pitch_change) {
+        candidate = active_note_->note;
+    }
+
+    // Track a new fret during the pick articulation window.
+    if (active_note_.has_value() && articulation_window && quick_candidate > 0 &&
+        quick_candidate > 0 &&
+        std::abs(quick_candidate - active_note_->note) >=
+            kMelodicIntervalMinSemitones &&
+        !midi_notes_one_octave_apart(quick_candidate, active_note_->note)) {
+        candidate = quick_candidate;
+    }
+
     impl_->last_candidate_note = candidate;
     const bool in_note_range = note_in_range(candidate, config_);
 
@@ -766,22 +866,14 @@ void Analyser::apply_pitch_to_note_machine(const PitchEstimate& pitch,
 
     const bool pitch_ok = pitch_valid_for_note_on(pitch, gate_rms, config_) &&
                           in_note_range;
-    const bool attack_pitch_ok =
-        attack_phase_ && !active_note_.has_value() &&
-        pitch_audible_for_sustain(pitch, gate_rms, config_) && in_note_range;
-    const bool recovery_pitch_ok =
-        !active_note_.has_value() && impl_->awaiting_fresh_attack &&
-        impl_->squelch_blocks_after_off == 0U &&
-        pitch_audible_for_sustain(pitch, gate_rms, config_) && in_note_range;
-    const bool on_eligible = pitch_ok || attack_pitch_ok || recovery_pitch_ok;
     const bool subharmonic_glitch =
-        on_eligible && quick_candidate > 0 &&
+        pitch_ok && quick_candidate > 0 &&
         midi_notes_one_octave_apart(candidate, quick_candidate) &&
         candidate < quick_candidate &&
         !frequency_in_melody_course_band(folded_hz);
-    const bool on_ok = on_eligible && !subharmonic_glitch;
+    const bool on_ok = pitch_ok && !subharmonic_glitch;
 
-    if (on_eligible && !subharmonic_glitch) {
+    if (pitch_ok && !subharmonic_glitch) {
         track_note_candidate(*impl_, candidate, quantize_hz, config_.reference_a4_hz);
     }
 
@@ -789,13 +881,57 @@ void Analyser::apply_pitch_to_note_machine(const PitchEstimate& pitch,
         ++note_on_counter_;
     }
 
-    // Pick / slide to a new fret while the string still rings.
-    const bool melodic_switch =
-        active_note_.has_value() && deliberate_pick && on_eligible &&
+    // Re-strike the same fret while the string still rings.
+    const bool same_note_restrike =
+        active_note_.has_value() && on_ok &&
         impl_->squelch_blocks_after_off == 0U &&
-        candidate != active_note_->note && note_in_range(candidate, config_) &&
+        impl_->rearticulate_cooldown_blocks == 0U &&
+        candidate == active_note_->note && strong_held_pick &&
+        impl_->sustain_guard_blocks == 0U;
+
+    if (same_note_restrike) {
+        const float velocity = rms_to_velocity(
+            note_on_velocity_rms(block_rms, pitch.rms), config_);
+        if (config_.pitch_bend_enable) {
+            emit_pitch_bend(0, end_frame);
+        }
+        emit_note(active_note_->note, 0.0F, false, end_frame);
+        emit_note(active_note_->note, velocity, true, end_frame);
+        note_on_counter_ = 0;
+        note_off_counter_ = 0;
+        attack_phase_ = false;
+        impl_->awaiting_fresh_attack = false;
+        impl_->sustain_guard_blocks = kSustainGuardBlocks;
+        impl_->peak_block_rms = block_rms;
+        impl_->rearticulate_cooldown_blocks = kRearticulateCooldownBlocks;
+        impl_->pick_valley_rms = block_rms;
+        impl_->articulation_latch_blocks = 0U;
+        active_note_->velocity = velocity;
+        clear_pitch_tracking_history(*impl_);
+        maybe_emit_continuous_pitch_bend(pitch, end_frame);
+        return;
+    }
+
+    // Pick / slide to a new fret while the string still rings.
+    const bool fret_change_pick =
+        active_note_.has_value() && quick_candidate > 0 &&
+        std::abs(quick_candidate - active_note_->note) >=
+            kMelodicIntervalMinSemitones &&
+        !midi_notes_one_octave_apart(quick_candidate, active_note_->note);
+
+    const bool stable_fret_change =
+        fret_change_pick && impl_->pending_candidate_hops >= 1U &&
+        impl_->pending_candidate_note == quick_candidate;
+
+    const bool melodic_switch =
+        active_note_.has_value() && pitch_ok &&
+        impl_->squelch_blocks_after_off == 0U &&
+        candidate != active_note_->note &&
+        note_in_range(candidate, config_) &&
         !midi_notes_one_octave_apart(candidate, active_note_->note) &&
-        (new_note_pick || significant_pitch_change);
+        (new_note_pick || significant_pitch_change ||
+         (strong_held_pick && fret_change_pick) ||
+         (held_string_pick && stable_fret_change));
 
     if (melodic_switch) {
         const float velocity = rms_to_velocity(
@@ -813,6 +949,8 @@ void Analyser::apply_pitch_to_note_machine(const PitchEstimate& pitch,
         impl_->sustain_guard_blocks = kSustainGuardBlocks;
         impl_->peak_block_rms = block_rms;
         impl_->rearticulate_cooldown_blocks = 0;
+        impl_->pick_valley_rms = block_rms;
+        impl_->articulation_latch_blocks = 0U;
         clear_pitch_tracking_history(*impl_);
         maybe_emit_continuous_pitch_bend(pitch, end_frame);
         return;
@@ -841,6 +979,7 @@ void Analyser::apply_pitch_to_note_machine(const PitchEstimate& pitch,
         impl_->sustain_guard_blocks = kSustainGuardBlocks;
         impl_->peak_block_rms = block_rms;
         impl_->rearticulate_cooldown_blocks = 0;
+        impl_->pick_valley_rms = block_rms;
         clear_pitch_tracking_history(*impl_);
         maybe_emit_continuous_pitch_bend(pitch, end_frame);
         return;
@@ -851,26 +990,33 @@ void Analyser::apply_pitch_to_note_machine(const PitchEstimate& pitch,
 
     // After squelch, stable pitch is enough — do not require another pick transient.
     if (impl_->awaiting_fresh_attack && impl_->squelch_blocks_after_off == 0U &&
-        pitch_audible_for_sustain(pitch, gate_rms, config_) &&
-        note_candidate_is_stable(*impl_, attack_phase_)) {
+        pitch_ok &&
+        (note_candidate_is_stable(*impl_) ||
+         (deliberate_pick && impl_->pending_candidate_hops >= 1U))) {
         impl_->awaiting_fresh_attack = false;
     }
 
     const bool may_trigger_note_on =
-        attack_phase_ || !impl_->awaiting_fresh_attack ||
-        is_attack_transient(block_rms, impl_->prev_block_rms, config_) ||
-        recovery_pitch_ok;
+        attack_phase_ || !impl_->awaiting_fresh_attack || deliberate_pick ||
+        is_attack_transient(block_rms, impl_->prev_block_rms, config_);
+
+    const bool squelch_clear =
+        impl_->squelch_blocks_after_off == 0U ||
+        (attack_phase_ &&
+         (deliberate_pick ||
+          is_attack_transient(block_rms, impl_->prev_block_rms, config_)));
 
     // Note is locked from first Note On until Note Off — no semitone stepping on decay.
     const bool quick_agrees =
         std::abs(candidate - quick_candidate) <= 2 ||
         midi_notes_one_octave_apart(candidate, quick_candidate);
     const bool stable_for_on =
-        note_candidate_is_stable(*impl_, attack_phase_) ||
-        note_candidate_stable_for_attack(*impl_, quantize_hz, attack_phase_);
+        note_candidate_is_stable(*impl_) ||
+        note_candidate_stable_for_attack(*impl_, quantize_hz, attack_phase_,
+                                         impl_->awaiting_fresh_attack,
+                                         deliberate_pick);
     if (!active_note_.has_value() && on_ok && quick_agrees &&
-        note_on_counter_ >= on_debounce &&
-        impl_->squelch_blocks_after_off == 0U && may_trigger_note_on &&
+        note_on_counter_ >= on_debounce && squelch_clear && may_trigger_note_on &&
         stable_for_on) {
         const float velocity = rms_to_velocity(
             note_on_velocity_rms(block_rms, pitch.rms), config_);
@@ -886,6 +1032,7 @@ void Analyser::apply_pitch_to_note_machine(const PitchEstimate& pitch,
         impl_->awaiting_fresh_attack = false;
         impl_->sustain_guard_blocks = kSustainGuardBlocks;
         impl_->peak_block_rms = block_rms;
+        impl_->pick_valley_rms = block_rms;
         clear_pitch_tracking_history(*impl_);
     }
 
@@ -975,7 +1122,9 @@ void Analyser::update_pitch_monitor() noexcept {
     pitch_monitor_.confidence = pitch.confidence;
 
     const float display_hz = tuner_display_hz(pitch);
-    if (display_hz > 0.0F && pitch_in_range(display_hz, config_)) {
+    if (display_hz > 0.0F && pitch_in_range(display_hz, config_) &&
+        (pitch.confidence >= kTunerDisplayMinConfidence ||
+         pitch_monitor_.input_rms >= kTunerMinAudioRms)) {
         pitch_monitor_.detected_hz = display_hz;
     }
 
@@ -1079,6 +1228,9 @@ std::span<const NoteEvent> Analyser::process(
     if (impl_->rearticulate_cooldown_blocks > 0U) {
         --impl_->rearticulate_cooldown_blocks;
     }
+    if (impl_->articulation_latch_blocks > 0U) {
+        --impl_->articulation_latch_blocks;
+    }
 
     std::size_t hops_done = 0;
     accumulate_samples(samples, samples.size(), block_rms, hops_done);
@@ -1097,6 +1249,10 @@ std::span<const NoteEvent> Analyser::process(
     update_note_off_delay(block_rms, samples.size());
 
     if (active_note_.has_value()) {
+        if (impl_->pick_valley_rms <= config_.silence_rms_threshold ||
+            block_rms < impl_->pick_valley_rms) {
+            impl_->pick_valley_rms = block_rms;
+        }
         impl_->peak_block_rms =
             std::max(block_rms, impl_->peak_block_rms * kSustainPeakDecay);
     } else if (block_rms < config_.silence_rms_threshold * 4.0F) {
