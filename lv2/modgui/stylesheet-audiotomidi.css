@@ -1,0 +1,180 @@
+.mod-pedal.audiotomidi{{{cns}}} {
+    background: linear-gradient(180deg, #1a1a22 0%, #0d0d12 100%);
+    border: 2px solid #3a3a48;
+    border-radius: 12px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06),
+                0 4px 12px rgba(0, 0, 0, 0.45);
+    position: absolute;
+    width: 220px;
+    height: 248px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    color: #e8e8f0;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .mod-drag-handle {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 36px;
+    z-index: 20;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .mod-plugin-brand,
+.mod-pedal.audiotomidi{{{cns}}} .mod-plugin-name {
+    display: none;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .mod-pedal-input,
+.mod-pedal.audiotomidi{{{cns}}} .mod-pedal-output {
+    top: 112px;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .mod-audio-input {
+    left: 6px;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .mod-midi-output {
+    right: 6px;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-panel {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    top: 12px;
+    text-align: center;
+    z-index: 30;
+    pointer-events: none;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-display-label {
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    color: #7a7a8a;
+    margin-bottom: 6px;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-display {
+    background: #08080e;
+    border: 2px solid #2a2a38;
+    border-radius: 8px;
+    padding: 10px 8px 6px;
+    margin-bottom: 6px;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.55);
+    min-height: 72px;
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    line-height: 1;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-note-name {
+    font-size: 52px;
+    font-weight: 700;
+    color: #3a3a48;
+    font-variant-numeric: tabular-nums;
+    transition: color 80ms ease;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-note-name.active {
+    color: #5eead4;
+    text-shadow: 0 0 16px rgba(94, 234, 212, 0.45);
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-note-octave {
+    font-size: 28px;
+    font-weight: 600;
+    color: #5eead4;
+    margin-left: 2px;
+    opacity: 0.85;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-note-name:not(.active) + .tuner-note-octave {
+    color: #3a3a48;
+    opacity: 1;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-hz {
+    font-size: 15px;
+    color: #c8c8d8;
+    margin-bottom: 2px;
+    font-variant-numeric: tabular-nums;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-cents {
+    font-size: 11px;
+    color: #6a6a7a;
+    margin-bottom: 4px;
+    font-variant-numeric: tabular-nums;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-signal {
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: #5a5a6a;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-signal-warn {
+    color: #fbbf24;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-signal-ok {
+    color: #4ade80;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-compare {
+    border-top: 1px solid #2a2a36;
+    padding-top: 8px;
+    font-size: 11px;
+    text-align: left;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 4px;
+    font-variant-numeric: tabular-nums;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-key {
+    color: #6a6a7a;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .tuner-val {
+    color: #e8e8f0;
+    font-weight: 600;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .pitch-method-row {
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    z-index: 40;
+    pointer-events: auto;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .pitch-method-label {
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: #7a7a8a;
+    text-transform: uppercase;
+}
+
+.mod-pedal.audiotomidi{{{cns}}} .pitch-method-select {
+    flex: 1;
+    max-width: 150px;
+    font-size: 10px;
+    padding: 3px 4px;
+    border-radius: 4px;
+    border: 1px solid #3a3a48;
+    background: #12121a;
+    color: #e8e8f0;
+}

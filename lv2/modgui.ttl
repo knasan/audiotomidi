@@ -1,0 +1,46 @@
+@prefix lv2:    <http://lv2plug.in/ns/lv2core#> .
+@prefix modgui: <http://moddevices.com/ns/modgui#> .
+
+<http://github.com/knasan/audiotomidi>
+    modgui:gui [
+        modgui:resourcesDirectory <modgui> ;
+        modgui:iconTemplate <modgui/icon-audiotomidi.html> ;
+        modgui:stylesheet <modgui/stylesheet-audiotomidi.css> ;
+        modgui:javascript <modgui/tuner.js> ;
+        modgui:screenshot <modgui/screenshot-audiotomidi.png> ;
+        modgui:thumbnail <modgui/thumbnail-audiotomidi.png> ;
+        modgui:brand "audiotomidi" ;
+        modgui:label "Audio to MIDI" ;
+        modgui:model "boxy" ;
+        modgui:color "black" ;
+        modgui:monitoredOutputs [
+            lv2:symbol "tuner_hz"
+        ] , [
+            lv2:symbol "tuner_midi_from_hz"
+        ] , [
+            lv2:symbol "tuner_midi_detected"
+        ] , [
+            lv2:symbol "tuner_midi_active"
+        ] , [
+            lv2:symbol "tuner_confidence"
+        ] , [
+            lv2:symbol "tuner_rms"
+        ] ;
+        modgui:port [
+            lv2:index 0 ;
+            lv2:symbol "sensitivity" ;
+            lv2:name "Sensitivity" ;
+        ] , [
+            lv2:index 1 ;
+            lv2:symbol "midi_transpose" ;
+            lv2:name "Transpose" ;
+        ] , [
+            lv2:index 2 ;
+            lv2:symbol "note_off_debounce" ;
+            lv2:name "Note Off" ;
+        ] , [
+            lv2:index 3 ;
+            lv2:symbol "pitch_method" ;
+            lv2:name "Algorithm" ;
+        ] ;
+    ] .

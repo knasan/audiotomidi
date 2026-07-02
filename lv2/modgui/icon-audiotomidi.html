@@ -1,0 +1,47 @@
+<div class="mod-pedal mod-box mod-boxy audiotomidi{{{cns}}}">
+    <div mod-role="drag-handle" class="mod-drag-handle"></div>
+    <div class="mod-plugin-brand">{{brand}}</div>
+    <div class="mod-plugin-name">{{label}}</div>
+
+    <div class="tuner-panel">
+        <div class="tuner-display-label">Note Detection</div>
+
+        <div class="tuner-display">
+            <span class="tuner-note-name">--</span><span class="tuner-note-octave"></span>
+        </div>
+
+        <div class="tuner-hz">— Hz</div>
+        <div class="tuner-cents">±0 ct</div>
+        <div class="tuner-signal">No Signal</div>
+
+        <div class="tuner-compare">
+            <div class="tuner-row">
+                <span class="tuner-key">Tuner (Hz)</span>
+                <span class="tuner-val tuner-read-hz">--</span>
+            </div>
+            <div class="tuner-row">
+                <span class="tuner-key">MIDI Out</span>
+                <span class="tuner-val tuner-read-midi">--</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="pitch-method-row">
+        <label class="pitch-method-label">Algo</label>
+        <select class="pitch-method-select mod-enumerated"
+                mod-role="input-control-port" mod-port-symbol="pitch_method"
+                mod-widget="select">
+            <option value="0">YIN Fast</option>
+            <option value="1">MComb</option>
+        </select>
+    </div>
+
+    <div class="mod-pedal-input">
+        <div class="mod-input mod-audio-input" title="Audio In"
+             mod-role="input-audio-port" mod-port-symbol="audio_in"></div>
+    </div>
+    <div class="mod-pedal-output">
+        <div class="mod-output mod-midi-output" title="MIDI Out"
+             mod-role="output-midi-port" mod-port-symbol="midi_out"></div>
+    </div>
+</div>

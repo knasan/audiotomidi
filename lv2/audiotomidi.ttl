@@ -1,0 +1,250 @@
+@prefix atom:  <http://lv2plug.in/ns/ext/atom#> .
+@prefix doap:  <http://usefulinc.com/ns/doap#> .
+@prefix lv2:   <http://lv2plug.in/ns/lv2core#> .
+@prefix midi:  <http://lv2plug.in/ns/ext/midi#> .
+@prefix mod:   <http://moddevices.com/ns/mod#> .
+@prefix pg:    <http://lv2plug.in/ns/ext/port-groups#> .
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix urid:  <http://lv2plug.in/ns/ext/urid#> .
+@prefix units: <http://lv2plug.in/ns/extensions/units#> .
+
+# Mono audio input group — tells hosts (incl. MOD) this is the main signal path.
+<http://github.com/knasan/audiotomidi#audio>
+    a pg:MonoGroup, pg:InputGroup ;
+    lv2:symbol "audio" ;
+    rdfs:label "Audio" .
+
+<http://github.com/knasan/audiotomidi>
+    a lv2:Plugin,
+        lv2:AnalyserPlugin,
+        mod:MIDIPlugin ;
+    lv2:binary <audiotomidi.so> ;
+    doap:name "Audio to MIDI" ;
+    doap:license <http://opensource.org/licenses/isc> ;
+    lv2:project <http://github.com/knasan/audiotomidi> ;
+    mod:brand "audiotomidi" ;
+    mod:label "Audio to MIDI" ;
+    rdfs:comment "Monophonic guitar pitch tracker for MOD (Dwarf/Desktop). Audio in, MIDI out." ;
+    lv2:requiredFeature urid:map ;
+    lv2:optionalFeature lv2:hardRTCapable ;
+    lv2:optionalFeature <http://lv2plug.in/ns/ext/options#options> ;
+    lv2:optionalFeature <http://lv2plug.in/ns/ext/buf-size#boundedBlockLength> ;
+    pg:mainInput <http://github.com/knasan/audiotomidi#audio> ;
+    lv2:minorVersion 0 ;
+    lv2:microVersion 42 ;
+    lv2:port [
+        a lv2:AudioPort, lv2:InputPort ;
+        lv2:index 0 ;
+        lv2:symbol "audio_in" ;
+        lv2:name "Audio In" ;
+        pg:group <http://github.com/knasan/audiotomidi#audio> ;
+        lv2:designation pg:center ;
+        rdfs:comment "Mono audio input (guitar)."
+    ] , [
+        a atom:AtomPort, lv2:OutputPort ;
+        lv2:index 1 ;
+        lv2:symbol "midi_out" ;
+        lv2:name "MIDI Out" ;
+        rdfs:comment "Note On/Off and Pitch Bend events for synths (e.g. ePiano)." ;
+        atom:bufferType atom:Sequence ;
+        atom:supports midi:MidiEvent
+    ] , [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index 2 ;
+        lv2:symbol "sensitivity" ;
+        lv2:name "Sensitivity" ;
+        rdfs:comment "Pitch hold confidence (0.55–1.0). Higher = Note Off sooner when you stop. Do not use 0 — it prevents Note Off." ;
+        lv2:default 0.7 ;
+        lv2:minimum 0.55 ;
+        lv2:maximum 1.0 ;
+        units:unit units:pu
+    ] , [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index 3 ;
+        lv2:symbol "midi_channel" ;
+        lv2:name "MIDI Channel" ;
+        rdfs:comment "MIDI channel 0–15 (displayed as 1–16 in some hosts). Must match the synth MIDI channel." ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 15.0 ;
+        lv2:portProperty lv2:integer ;
+        units:unit units:integer
+    ] , [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index 4 ;
+        lv2:symbol "note_on_debounce" ;
+        lv2:name "Note On Debounce" ;
+        rdfs:comment "Consecutive valid frames before Note On." ;
+        lv2:default 2.0 ;
+        lv2:minimum 1.0 ;
+        lv2:maximum 100.0 ;
+        lv2:portProperty lv2:integer ;
+        units:unit units:frame
+    ] , [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index 5 ;
+        lv2:symbol "note_off_debounce" ;
+        lv2:name "Note Off Delay" ;
+        rdfs:comment "Audio blocks without detected pitch before MIDI Note Off. Use 4 for string/brass synths (fast), 16 for legato piano." ;
+        lv2:default 8.0 ;
+        lv2:minimum 4.0 ;
+        lv2:maximum 16.0 ;
+        lv2:portProperty lv2:integer ;
+        units:unit units:frame
+    ] , [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index 6 ;
+        lv2:symbol "pitch_bend_enable" ;
+        lv2:name "Pitch Bend" ;
+        rdfs:comment "0 = stable semitone notes (no vibrato tracking). 1 = follow guitar intonation / vibrato." ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+        lv2:portProperty lv2:integer ;
+        units:unit units:integer
+    ] , [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index 7 ;
+        lv2:symbol "lowest_note" ;
+        lv2:name "Lowest Note" ;
+        rdfs:comment "Lowest MIDI note when Note Floor is on. 64 (E4) = high E only. 40 (E2) = full neck." ;
+        lv2:default 64.0 ;
+        lv2:minimum 40.0 ;
+        lv2:maximum 88.0 ;
+        lv2:portProperty lv2:integer ;
+        units:unit units:integer
+    ] , [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index 8 ;
+        lv2:symbol "reference_a4_hz" ;
+        lv2:name "A4 Reference" ;
+        rdfs:comment "Stimmfrequenz (Kammerton A) in Hz for pitch-to-MIDI. 440 = standard. 432 = low tuning." ;
+        lv2:default 440.0 ;
+        lv2:minimum 415.0 ;
+        lv2:maximum 466.0 ;
+        units:unit units:hz
+    ] , [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index 9 ;
+        lv2:symbol "lowest_note_limit_enable" ;
+        lv2:name "Note Floor" ;
+        rdfs:comment "0 = full guitar (E2 up, no floor filter). 1 = ignore notes below Lowest Note." ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+        lv2:portProperty lv2:integer ;
+        units:unit units:integer
+    ] , [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index 10 ;
+        lv2:symbol "midi_transpose" ;
+        lv2:name "MIDI Transpose" ;
+        rdfs:comment "Legacy offset — MIDI follows the tuner display (concert pitch from Hz). Kept for preset compatibility." ;
+        lv2:default 0.0 ;
+        lv2:minimum -12.0 ;
+        lv2:maximum 12.0 ;
+        lv2:portProperty lv2:integer ;
+        units:unit units:semitone12TET
+    ] , [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index 11 ;
+        lv2:symbol "pitch_bias_cents" ;
+        lv2:name "Pitch Bias" ;
+        rdfs:comment "Fine calibration in cents (negative = flatter). Use with MIDI Transpose for guitar intonation." ;
+        lv2:default 0.0 ;
+        lv2:minimum -100.0 ;
+        lv2:maximum 100.0 ;
+        units:unit units:cent
+    ] , [
+        a lv2:ControlPort, lv2:InputPort ;
+        lv2:index 12 ;
+        lv2:symbol "pitch_method" ;
+        lv2:name "Pitch Algorithm" ;
+        rdfs:comment "YIN Fast: proven default for guitar. MComb: spectral comb (Aubio has no confidence metric)." ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+        lv2:portProperty lv2:integer, lv2:enumeration ;
+        lv2:scalePoint [
+            rdfs:label "YIN Fast (Bass)" ;
+            rdf:value 0.0
+        ] , [
+            rdfs:label "MComb (Guitar)" ;
+            rdf:value 1.0
+        ] ;
+        units:unit units:integer
+    ] , [
+        a lv2:ControlPort, lv2:OutputPort ;
+        lv2:index 13 ;
+        lv2:symbol "tuner_hz" ;
+        lv2:name "Tuner Hz" ;
+        rdfs:comment "Detected fundamental in Hz (refined). Compare with an external tuner." ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 2000.0 ;
+        units:unit units:hz
+    ] , [
+        a lv2:ControlPort, lv2:OutputPort ;
+        lv2:index 14 ;
+        lv2:symbol "tuner_cents" ;
+        lv2:name "Tuner Cents" ;
+        rdfs:comment "Deviation from nearest semitone (+ sharp, − flat). Needle position on MOD GUI." ;
+        lv2:default 0.0 ;
+        lv2:minimum -50.0 ;
+        lv2:maximum 50.0 ;
+        units:unit units:cent
+    ] , [
+        a lv2:ControlPort, lv2:OutputPort ;
+        lv2:index 15 ;
+        lv2:symbol "tuner_midi_from_hz" ;
+        lv2:name "Tuner Note" ;
+        rdfs:comment "MIDI note from Hz only (no transpose). Pure pitch reading like a chromatic tuner." ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 127.0 ;
+        lv2:portProperty lv2:integer ;
+        units:unit units:integer
+    ] , [
+        a lv2:ControlPort, lv2:OutputPort ;
+        lv2:index 16 ;
+        lv2:symbol "tuner_midi_detected" ;
+        lv2:name "MIDI Candidate" ;
+        rdfs:comment "Quantised note after bias/median/transpose — what AudioToMIDI would send." ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 127.0 ;
+        lv2:portProperty lv2:integer ;
+        units:unit units:integer
+    ] , [
+        a lv2:ControlPort, lv2:OutputPort ;
+        lv2:index 17 ;
+        lv2:symbol "tuner_midi_active" ;
+        lv2:name "MIDI Active" ;
+        rdfs:comment "Currently held MIDI note (0 when silent)." ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 127.0 ;
+        lv2:portProperty lv2:integer ;
+        units:unit units:integer
+    ] , [
+        a lv2:ControlPort, lv2:OutputPort ;
+        lv2:index 18 ;
+        lv2:symbol "tuner_confidence" ;
+        lv2:name "Tuner Confidence" ;
+        rdfs:comment "Aubio pitch confidence (0–1)." ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+        units:unit units:pu
+    ] , [
+        a lv2:ControlPort, lv2:OutputPort ;
+        lv2:index 19 ;
+        lv2:symbol "tuner_rms" ;
+        lv2:name "Tuner RMS" ;
+        rdfs:comment "Input block RMS — proves audio reaches the plugin (MOD GUI)." ;
+        lv2:default 0.0 ;
+        lv2:minimum 0.0 ;
+        lv2:maximum 1.0 ;
+        units:unit units:vu
+    ] .
