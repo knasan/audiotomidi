@@ -18,10 +18,18 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Sized deallocation (C++14) emits _ZGTtnam; with -static-libstdc++ it can remain UND
+# and break dlopen on MOD Dwarf. Apply to every C++ target in cross-builds.
+if(CMAKE_CROSSCOMPILING)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-sized-deallocation>)
+endif()
+
 option(AUDIOTOMIDI_FETCH_AUBIO
        "Fetch and build Aubio when not found via pkg-config" ON)
 option(AUDIOTOMIDI_BUILD_TESTS "Build Catch2 unit tests" ON)
 option(AUDIOTOMIDI_BUILD_LV2 "Build LV2 plugin bundle" ON)
+option(AUDIOTOMIDI_GLIBC_217
+       "Link LV2 plugin with GLIBC_2.17 symbol versions (old Dwarf firmware)" OFF)
 
 # --- Aubio -------------------------------------------------------------------
 
@@ -160,6 +168,22 @@ if(AUDIOTOMIDI_BUILD_LV2)
 
     if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
         target_compile_options(audiotomidi_lv2 PRIVATE -O2)
+    endif()
+
+    # MOD Dwarf: embed full libstdc++/libgcc so no unresolved C++ runtime symbols remain.
+    if(CMAKE_CROSSCOMPILING)
+        target_link_options(audiotomidi_lv2 PRIVATE
+            -static-libgcc
+            "-Wl,--whole-archive"
+            "-lstdc++"
+            "-Wl,--no-whole-archive"
+        )
+        if(AUDIOTOMIDI_GLIBC_217)
+            message(STATUS "Linking audiotomidi_lv2 with GLIBC_2.17 version script")
+            target_link_options(audiotomidi_lv2 PRIVATE
+                "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/cmake/glibc-2.17.ver"
+            )
+        endif()
     endif()
 
     set_target_properties(audiotomidi_lv2 PROPERTIES

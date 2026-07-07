@@ -1,0 +1,25 @@
+# Force math symbols to GLIBC_2.17 so the plugin loads on Dwarf firmware
+# that only provides GLIBC_2.17 (older images). Safe when libc also exports
+# these symbols at the 2.17 version node (standard on MOD sysroots).
+#
+# Used via: -Wl,--version-script=... at link time (audiotomidi_lv2 only).
+
+GLIBC_2.17 {
+  global:
+    expf;
+    exp2f;
+    logf;
+    log2f;
+    powf;
+    sinf;
+    cosf;
+    sqrtf;
+    floorf;
+    ceilf;
+    fabsf;
+    fmodf;
+    tanf;
+    atan2f;
+  local:
+    *;
+};

@@ -181,7 +181,7 @@ constexpr int kMelodicIntervalMinSemitones = 1;
 
 constexpr int kPitchBendSendThreshold = 64;
 
-float compute_rms(const std::span<const float> samples) noexcept {
+float compute_rms(const dsp::span<const float> samples) noexcept {
     if (samples.empty()) {
         return 0.0F;
     }
@@ -242,8 +242,7 @@ float compute_hop_rms(const float* const samples,
 
 bool is_attack_transient(const float block_rms, const float prev_block_rms,
                          const AnalyserConfig& config) noexcept {
-    // if (block_rms < config.velocity_rms_min * 4.0F) {
-    if (block_rms < config.velocity_rms_min * 2.0F) {
+    if (block_rms < config.velocity_rms_min * 4.0F) {
         return false;
     }
     if (prev_block_rms <= config.silence_rms_threshold) {
@@ -1080,7 +1079,7 @@ void Analyser::run_pitch_hop() {
     last_pitch_ = estimate;
 }
 
-void Analyser::accumulate_samples(const std::span<const float> samples,
+void Analyser::accumulate_samples(const dsp::span<const float> samples,
                                   const std::size_t block_size,
                                   const float block_rms,
                                   std::size_t& hops_done) {
@@ -1160,8 +1159,8 @@ void Analyser::update_pitch_monitor() noexcept {
     }
 }
 
-std::span<const NoteEvent> Analyser::process(
-    const std::span<const float> samples) {
+dsp::span<const NoteEvent> Analyser::process(
+    const dsp::span<const float> samples) {
     pending_count_ = 0;
 
     const float block_rms =
@@ -1173,12 +1172,12 @@ std::span<const NoteEvent> Analyser::process(
         impl_->pitch_output == nullptr) {
         last_pitch_ = {};
         update_pitch_monitor();
-        return std::span<const NoteEvent>(pending_.data(), pending_count_);
+        return dsp::span<const NoteEvent>(pending_.data(), pending_count_);
     }
     if (samples.size() > impl_->max_block_size) {
         last_pitch_ = {};
         update_pitch_monitor();
-        return std::span<const NoteEvent>(pending_.data(), pending_count_);
+        return dsp::span<const NoteEvent>(pending_.data(), pending_count_);
     }
 
     const float silence_gate = config_.silence_rms_threshold;
@@ -1203,7 +1202,7 @@ std::span<const NoteEvent> Analyser::process(
         }
         update_note_off_delay(block_rms, samples.size());
         update_pitch_monitor();
-        return std::span<const NoteEvent>(pending_.data(), pending_count_);
+        return dsp::span<const NoteEvent>(pending_.data(), pending_count_);
     }
 
     if (below_silence) {
@@ -1262,7 +1261,7 @@ std::span<const NoteEvent> Analyser::process(
     impl_->prev_block_rms = block_rms;
 
     update_pitch_monitor();
-    return std::span<const NoteEvent>(pending_.data(), pending_count_);
+    return dsp::span<const NoteEvent>(pending_.data(), pending_count_);
 }
 
 }  // namespace dsp

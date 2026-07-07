@@ -56,11 +56,11 @@ function (event) {
 
     function formatSignal(ds) {
         if (ds.hz && ds.hz > 0) {
-            return 'tone detected';
+            return 'Note detected';
         }
         if (hasAudioSignal(ds.rms)) {
             if (ds.confidence >= 0.12) {
-                return 'analysing…';
+                return 'Analyzing…';
             }
             return 'weak signal';
         }

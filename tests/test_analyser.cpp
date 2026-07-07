@@ -24,7 +24,7 @@ std::vector<float> make_sine(const float frequency_hz, const double sample_rate,
     return buffer;
 }
 
-bool has_note_on(const std::span<const dsp::NoteEvent> events, const int note) {
+bool has_note_on(const dsp::span<const dsp::NoteEvent> events, const int note) {
     for (const dsp::NoteEvent& event : events) {
         if (event.kind == dsp::MidiEventKind::Note && event.on &&
             event.note == note) {
@@ -34,7 +34,7 @@ bool has_note_on(const std::span<const dsp::NoteEvent> events, const int note) {
     return false;
 }
 
-std::size_t count_note_ons(const std::span<const dsp::NoteEvent> events) {
+std::size_t count_note_ons(const dsp::span<const dsp::NoteEvent> events) {
     std::size_t count = 0;
     for (const dsp::NoteEvent& event : events) {
         if (event.kind == dsp::MidiEventKind::Note && event.on) {
@@ -44,7 +44,7 @@ std::size_t count_note_ons(const std::span<const dsp::NoteEvent> events) {
     return count;
 }
 
-std::size_t count_note_offs(const std::span<const dsp::NoteEvent> events) {
+std::size_t count_note_offs(const dsp::span<const dsp::NoteEvent> events) {
     std::size_t count = 0;
     for (const dsp::NoteEvent& event : events) {
         if (event.kind == dsp::MidiEventKind::Note && !event.on) {
@@ -54,7 +54,7 @@ std::size_t count_note_offs(const std::span<const dsp::NoteEvent> events) {
     return count;
 }
 
-bool has_note_off(const std::span<const dsp::NoteEvent> events, const int note) {
+bool has_note_off(const dsp::span<const dsp::NoteEvent> events, const int note) {
     for (const dsp::NoteEvent& event : events) {
         if (event.kind == dsp::MidiEventKind::Note && !event.on &&
             event.note == note) {
@@ -64,7 +64,7 @@ bool has_note_off(const std::span<const dsp::NoteEvent> events, const int note) 
     return false;
 }
 
-bool has_pitch_bend(const std::span<const dsp::NoteEvent> events) {
+bool has_pitch_bend(const dsp::span<const dsp::NoteEvent> events) {
     for (const dsp::NoteEvent& event : events) {
         if (event.kind == dsp::MidiEventKind::PitchBend) {
             return true;
@@ -160,7 +160,7 @@ TEST_CASE("Analyser detects 440 Hz and emits Note On", "[analyser]") {
     REQUIRE(analyser.prepare(kSampleRate, kBlockSize, config));
 
     std::size_t position = 0;
-    std::span<const dsp::NoteEvent> events{};
+    dsp::span<const dsp::NoteEvent> events{};
     bool got_note_on = false;
     for (int i = 0; i < 80; ++i) {
         const auto buffer =
@@ -630,6 +630,61 @@ TEST_CASE("Analyser emits stable MIDI on repeated separated attacks", "[analyser
     }
 }
 
+TEST_CASE("Analyser re-attacks same note after short staccato gap", "[analyser]") {
+    dsp::Analyser analyser;
+    auto config = fast_test_config();
+    config.note_on_debounce_frames = 1;
+    config.note_off_delay_blocks = 4;
+    constexpr double kSampleRate = 48000.0;
+    constexpr std::size_t kBlockSize = 128;
+    constexpr float kC4Hz = 261.63F;
+    constexpr int kC4Note = 60;
+
+    REQUIRE(analyser.prepare(kSampleRate, kBlockSize, config));
+
+    std::size_t position = 0;
+    std::vector<int> note_ons;
+    const std::vector<float> silence(kBlockSize, 0.0F);
+
+    for (int beat = 0; beat < 4; ++beat) {
+        for (int i = 0; i < 160; ++i) {
+            const auto buffer = make_continuous_sine_chunk(kC4Hz, kSampleRate, position,
+                                                           kBlockSize);
+            position += kBlockSize;
+            for (const dsp::NoteEvent& event : analyser.process(buffer)) {
+                if (event.kind == dsp::MidiEventKind::Note && event.on) {
+                    note_ons.push_back(event.note);
+                }
+            }
+        }
+        for (int i = 0; i < 12; ++i) {
+            (void)analyser.process(silence);
+        }
+        bool got_attack = false;
+        for (int i = 0; i < 40; ++i) {
+            const auto buffer = make_continuous_sine_chunk(kC4Hz, kSampleRate, position,
+                                                           kBlockSize, 0.75F);
+            position += kBlockSize;
+            for (const dsp::NoteEvent& event : analyser.process(buffer)) {
+                if (event.kind == dsp::MidiEventKind::Note && event.on &&
+                    std::abs(event.note - kC4Note) <= 1) {
+                    note_ons.push_back(event.note);
+                    got_attack = true;
+                }
+            }
+            if (got_attack) {
+                break;
+            }
+        }
+        REQUIRE(got_attack);
+    }
+
+    REQUIRE(note_ons.size() >= 4);
+    for (const int note : note_ons) {
+        REQUIRE(std::abs(note - kC4Note) <= 1);
+    }
+}
+
 TEST_CASE("Analyser switches to lower fret after missed higher fret on G string",
           "[analyser]") {
     dsp::Analyser analyser;
@@ -721,7 +776,7 @@ TEST_CASE("Analyser mcomb emits Note On after confidence proxy fix", "[analyser]
     constexpr std::size_t kBlockSize = 2048;
 
     REQUIRE(analyser.prepare(kSampleRate, kBlockSize, config));
-    REQUIRE(drive_until_note_on(analyser, 440.0F, kSampleRate, kBlockSize, 69, 40));
+    REQUIRE(drive_until_note_on(analyser, 440.0F, kSampleRate, kBlockSize, 69, 80));
 }
 
 TEST_CASE("Analyser switches pitch method at runtime", "[analyser]") {

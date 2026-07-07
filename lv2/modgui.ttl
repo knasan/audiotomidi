@@ -27,19 +27,19 @@
             lv2:symbol "tuner_rms"
         ] ;
         modgui:port [
-            lv2:index 0 ;
+            lv2:index 3 ;
             lv2:symbol "sensitivity" ;
             lv2:name "Sensitivity" ;
         ] , [
-            lv2:index 1 ;
+            lv2:index 11 ;
             lv2:symbol "midi_transpose" ;
             lv2:name "Transpose" ;
         ] , [
-            lv2:index 2 ;
+            lv2:index 6 ;
             lv2:symbol "note_off_debounce" ;
             lv2:name "Note Off" ;
         ] , [
-            lv2:index 3 ;
+            lv2:index 13 ;
             lv2:symbol "pitch_method" ;
             lv2:name "Algorithm" ;
         ] ;

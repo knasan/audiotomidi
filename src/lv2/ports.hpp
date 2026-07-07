@@ -6,34 +6,34 @@ namespace lv2_ports {
 
 /// LV2 port indices — must match lv2/audiotomidi.ttl exactly.
 ///
-/// Signal interfaces for MOD / ePiano routing:
-///   AudioIn  (index 0) — mono guitar audio from the pedalboard
-///   MidiOut  (index 1) — Atom MIDI sequence to a synth (e.g. ePiano MIDI In)
+/// MOD Dwarf requires an audio output (dry passthrough) to wire the effect in the
+/// pedalboard graph. MIDI leaves via the Atom port.
 enum PortIndex : std::uint32_t {
     AudioIn = 0,
-    MidiOut = 1,
-    Sensitivity = 2,
-    MidiChannel = 3,
-    NoteOnDebounce = 4,
-    NoteOffDebounce = 5,
-    PitchBendEnable = 6,
-    LowestNote = 7,
-    ReferenceA4Hz = 8,
-    LowestNoteLimitEnable = 9,
-    MidiTranspose = 10,
-    PitchBiasCents = 11,
-    PitchMethod = 12,
+    AudioOut = 1,
+    MidiOut = 2,
+    Sensitivity = 3,
+    MidiChannel = 4,
+    NoteOnDebounce = 5,
+    NoteOffDebounce = 6,
+    PitchBendEnable = 7,
+    LowestNote = 8,
+    ReferenceA4Hz = 9,
+    LowestNoteLimitEnable = 10,
+    MidiTranspose = 11,
+    PitchBiasCents = 12,
+    PitchMethod = 13,
 
-    /// Tuner / debug outputs (LV2 control outputs — MOD GUI reads via monitoredOutputs).
-    TunerHz = 13,
-    TunerCents = 14,
-    TunerMidiFromHz = 15,
-    TunerMidiDetected = 16,
-    TunerMidiActive = 17,
-    TunerConfidence = 18,
-    TunerRms = 19,
+    /// Tuner / debug outputs (MOD GUI reads via monitoredOutputs).
+    TunerHz = 14,
+    TunerCents = 15,
+    TunerMidiFromHz = 16,
+    TunerMidiDetected = 17,
+    TunerMidiActive = 18,
+    TunerConfidence = 19,
+    TunerRms = 20,
 
-    PortCount = 20,
+    PortCount = 21,
 };
 
 }  // namespace lv2_ports

@@ -13,7 +13,6 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <span>
 
 namespace {
 
@@ -30,6 +29,7 @@ struct PluginInstance {
     dsp::Analyser analyser;
 
     float* audio_in = nullptr;
+    float* audio_out = nullptr;
     LV2_Atom_Sequence* midi_out = nullptr;
     const float* sensitivity = nullptr;
     const float* midi_channel = nullptr;
@@ -251,7 +251,7 @@ void forge_midi_message(LV2_Atom_Forge* const forge,
 
 /// Initialise or overwrite the Atom MIDI output with an (possibly empty) event list.
 void write_midi_events(PluginInstance* const self,
-                       const std::span<const dsp::NoteEvent> events) {
+                       const dsp::span<const dsp::NoteEvent> events) {
     if (self->midi_out == nullptr || !self->forge_ready) {
         return;
     }
@@ -358,6 +358,9 @@ void connect_port(const LV2_Handle instance, const std::uint32_t port,
         case lv2_ports::AudioIn:
             self->audio_in = static_cast<float*>(data);
             break;
+        case lv2_ports::AudioOut:
+            self->audio_out = static_cast<float*>(data);
+            break;
         case lv2_ports::MidiOut:
             self->midi_out = static_cast<LV2_Atom_Sequence*>(data);
             break;
@@ -443,7 +446,24 @@ void activate(const LV2_Handle instance) {
 
 void run(const LV2_Handle instance, const std::uint32_t n_samples) {
     auto* self = static_cast<PluginInstance*>(instance);
-    if (!self->active || n_samples == 0) {
+    if (n_samples == 0) {
+        return;
+    }
+
+    // Dry passthrough — MOD pedalboard needs an audio output to instantiate the plugin.
+    if (self->audio_out != nullptr) {
+        if (self->audio_in != nullptr) {
+            std::memcpy(self->audio_out, self->audio_in,
+                        static_cast<std::size_t>(n_samples) * sizeof(float));
+        } else {
+            std::memset(self->audio_out, 0,
+                        static_cast<std::size_t>(n_samples) * sizeof(float));
+        }
+    }
+
+    if (!self->active) {
+        write_tuner_outputs(self);
+        write_midi_events(self, {});
         return;
     }
 
@@ -460,8 +480,8 @@ void run(const LV2_Handle instance, const std::uint32_t n_samples) {
     apply_control_ports(self);
 
     const auto input =
-        std::span<const float>(self->audio_in, static_cast<std::size_t>(n_samples));
-    const std::span<const dsp::NoteEvent> events = self->analyser.process(input);
+        dsp::span<const float>(self->audio_in, static_cast<std::size_t>(n_samples));
+    const dsp::span<const dsp::NoteEvent> events = self->analyser.process(input);
     write_tuner_outputs(self);
     write_midi_events(self, events);
 }

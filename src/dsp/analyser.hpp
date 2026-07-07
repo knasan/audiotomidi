@@ -1,12 +1,12 @@
 #pragma once
 
 #include "dsp/types.hpp"
+#include "dsp/span.hpp"
 
 #include <array>
 #include <cstddef>
 #include <memory>
 #include <optional>
-#include <span>
 
 namespace dsp {
 
@@ -57,8 +57,8 @@ public:
     ///
     /// @pre prepare() succeeded and samples.size() <= max_block_size.
     /// @note Real-time safe: no heap allocation.
-    [[nodiscard]] std::span<const NoteEvent> process(
-        std::span<const float> samples);
+    [[nodiscard]] dsp::span<const NoteEvent> process(
+        dsp::span<const float> samples);
 
     /// Last applied configuration (hop/window, thresholds, note range).
     [[nodiscard]] const AnalyserConfig& config() const noexcept;
@@ -106,7 +106,7 @@ private:
 
     void run_pitch_hop();
 
-    void accumulate_samples(std::span<const float> samples,
+    void accumulate_samples(dsp::span<const float> samples,
                             std::size_t block_size, float block_rms,
                             std::size_t& hops_done);
 
